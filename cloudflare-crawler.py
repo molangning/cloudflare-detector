@@ -229,7 +229,7 @@ def lookup_domain(domain):
                 print("[!] Temporarily failed to resolve %s (%i/3)"%(domain,i))
 
                 # Exponential back off
-                time.sleep(i**2)
+                time.sleep(i ** 2)
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
