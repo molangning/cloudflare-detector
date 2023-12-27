@@ -128,6 +128,7 @@ def load_top10million():
 
         top10milliondomains_mutated.append(domain)
 
+    print("[+] Generated a list of %i domains from the top10million list"%(len(top10milliondomains_mutated)))
 
     return top10milliondomains_mutated
 
@@ -147,6 +148,8 @@ def load_domains():
             domains.append(i)
 
         return domains
+
+        print("[+] Got a list of %i domains from the domain list"%(len(domains)))
         
     else:
 
@@ -155,16 +158,15 @@ def load_domains():
         return load_top10million()
 
 print("[+] Parsing domain list")
+
 domain_list=queue.Queue()
 domain_list_raw=load_domains()
-
-print("[+] Loaded a list of %i domains from the domain list"%(len(domain_list_raw)))
 
 for domain in domain_list_raw:
 
     domain_list.put(domain)
 
-print("[+] Generated a list of %i domains from the domain list"%(domain_list.qsize()))
+print("[+] Queued %i domains from the domain list"%(domain_list.qsize()))
 
 # For those asyncio fanboys, I don't need to use asyncio as a dns request is fast enough
 # and threads are easier to implement. If you want, you can open a pull request to change that.
