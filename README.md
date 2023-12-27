@@ -2,9 +2,11 @@
 
 This is a simple script that downloads the top 10 million most popular website and does a lookup to check if its a part of cloudflare network.
 
-After looking up the domain, the script will then try to connect to port 443 and try to get the document root `/`.
+After looking up the domain, the script will then try to connect to port 443 and make a HEAD request
 
-if the connection succeeded, the domain will be written to file
+If the server replies with headers found in cloudflare protected sites, the domain will be written to `accessible_cloudflare_domains.txt`
+
+If the domain resolves to a ip address on cloudflare's network but the connection fails for some reason, the domain will be written to `unaccessible_cloudflare_domains.txt`
 
 ## Special files
 
