@@ -299,7 +299,7 @@ def tcping_domains(domain):
         unaccessible_cloudflare_domains.put(domain)
         return
 
-    print("[+] %s is protected by cloudflare and reachable by us."%(domain))
+    # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
     accessible_cloudflare_domains.put(domain)
 
     time.sleep(0.05)
