@@ -28,8 +28,9 @@ def silent_remove(path):
 
 if os.path.isfile(".always-fresh-cloudflare-lists"):
 
-    silent_remove("accessible_cloudflare_domains.txt")
-    silent_remove("unaccessible_cloudflare_domains.txt")
+    silent_remove("cloudflare_protected_domains.txt")
+    silent_remove("accessible_cloudflare_protected_domains.txt")
+    silent_remove("unaccessible_cloudflare_protected_domains.txt")
 
 print("[+] Cloudflare crawler")
 
@@ -170,8 +171,9 @@ print("[+] Generated a list of %i domains from the domain list"%(domain_list.qsi
 # and threads are easier to implement. If you want, you can open a pull request to change that.
 
 processed_domains=queue.Queue()
-accessible_cloudflare_domains=queue.Queue()
-unaccessible_cloudflare_domains=queue.Queue()
+cloudflare_protected_domains=queue.Queue()
+accessible_cloudflare_protected_domains=queue.Queue()
+unaccessible_cloudflare_protected_domains=queue.Queue()
 
 def status_check():
     while True:
@@ -201,7 +203,7 @@ def check_domain():
 
 def lookup_domain(domain):
     
-    for i in range(1,6):
+    for i in range(1,8):
         
         try:
             domain_ip_address=socket.gethostbyname(domain)
@@ -213,6 +215,7 @@ def lookup_domain(domain):
                     # Uncomment for more verbose log
                     # print("[+] %s in in cloudflare range %s"%(domain,cloudflare_range))
 
+                    cloudflare_protected_domains.put(domain)
                     processed_domains.put(domain)
                     return
 
@@ -226,10 +229,10 @@ def lookup_domain(domain):
                 return
 
             elif e.errno == -3:
-                print("[!] Temporarily failed to resolve %s (%i/5)"%(domain,i))
+                print("[!] Temporarily failed to resolve %s (%i/7)"%(domain,i))
 
                 # Exponential back off
-                time.sleep(i ** 2)
+                time.sleep(i ** 1.5)
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
@@ -267,42 +270,37 @@ def tcping_domains(domain):
     except requests.exceptions.Timeout:
         print("[!] Connection to %s timed out!"%(domain))
 
-        unaccessible_cloudflare_domains.put(domain)
+        unaccessible_cloudflare_protected_domains.put(domain)
         return
 
     except requests.exceptions.SSLError:
 
         print("[!] SSL error while trying to connect to %s!"%(domain))
 
-        unaccessible_cloudflare_domains.put(domain)
+        unaccessible_cloudflare_protected_domains.put(domain)
         return
 
     except Exception as e:
 
         print("[!] Unhandled error: %s"%(e))
+        return
 
     if "Server" not in res_headers.keys():
-        # print("[+] Response is missing the Server header!")
-
-        unaccessible_cloudflare_domains.put(domain)
+        print("[+] Response from %s is missing the Server header!"%(domain))
         return
 
-    if "CF-RAY" not in res_headers.keys():
-        # print("[+] Response is missing the CF-RAY header!")
-
-        unaccessible_cloudflare_domains.put(domain)
+    elif "CF-RAY" not in res_headers.keys():
+        print("[+] Response from %s is missing the CF-RAY header!"%(domain))
         return
 
-    if res_headers["Server"]!="cloudflare":
-        # print("[+] Response is not cloudflare!")
-
-        unaccessible_cloudflare_domains.put(domain)
+    elif res_headers["Server"]!="cloudflare":
+        print("[+] Response from %s is not cloudflare!"%(domain))
         return
 
     # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
-    accessible_cloudflare_domains.put(domain)
+    accessible_cloudflare_protected_domains.put(domain)
 
-    time.sleep(0.05)
+    time.sleep(0.1)
 
 print("[+] Starting dns lookup process")
 
@@ -339,8 +337,9 @@ def dump_domains(target_queue, file_name):
 
             time.sleep(0.1)
 
-threading.Thread(target=dump_domains, args=[accessible_cloudflare_domains, "accessible_cloudflare_domains.txt"]).start()
-threading.Thread(target=dump_domains, args=[unaccessible_cloudflare_domains, "unaccessible_cloudflare_domains.txt"]).start()
+threading.Thread(target=dump_domains, args=[cloudflare_protected_domains, "cloudflare_protected_domains.txt"]).start()
+threading.Thread(target=dump_domains, args=[accessible_cloudflare_protected_domains, "accessible_cloudflare_protected_domains.txt"]).start()
+threading.Thread(target=dump_domains, args=[unaccessible_cloudflare_protected_domains, "unaccessible_cloudflare_protected_domains.txt"]).start()
 
 for thread in dns_check_pool:
     thread.join()

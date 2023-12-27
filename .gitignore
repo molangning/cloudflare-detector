@@ -1,6 +1,6 @@
 # Ignore some runtime generated files
 
-*_cloudflare_domains.txt
+*cloudflare_protected_domains.txt
 top10million*
 cloudflare_domain_list.txt
 
