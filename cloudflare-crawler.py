@@ -227,17 +227,16 @@ def lookup_domain():
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
 
-    time.sleep(1)
-
+    time.sleep(0.1)
 
 def test_domains():
+
     while True:
 
         if domain_list.empty() and processed_domains.empty():
             return
 
         domain=processed_domains.get()
-        time.sleep(0.5)
 
         try:
             res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
@@ -281,6 +280,8 @@ def test_domains():
         print("[+] %s is protected by cloudflare and reachable by us."%(domain))
         accessible_cloudflare_domains.put(domain)
         processed_domains.task_done()
+
+        time.sleep(0.2)
 
 print("[+] Starting dns lookup process")
 
