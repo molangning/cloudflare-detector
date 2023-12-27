@@ -327,13 +327,11 @@ def dump_domains(target_queue, file_name):
             break
     
         try:
-
             domain=target_queue.get(block=False)
             open(file_name,"a").write(domain+"\n")
             target_queue.task_done()
     
         except queue.Empty:
-
             time.sleep(0.1)
 
 threading.Thread(target=dump_domains, args=[cloudflare_protected_domains, "cloudflare_protected_domains.txt"]).start()
