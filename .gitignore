@@ -1,2 +1,7 @@
-accessible_domains.txt
+# Ignore some runtime generated files
+
+*_cloudflare_domains.txt
 top10million*
+
+# Ignore flags
+.always-fresh-cloudflare-lists

@@ -6,6 +6,8 @@ After looking up the domain, the script will then try to connect to port 443 and
 
 if the connection succeeded, the domain will be written to file
 
-## TOFIX
+## Special files
 
-script errors out sometimes with `Temporary failure in name resolution`
+Create a file named `/.always-fresh-cloudflare-lists` for the script to automatically delete generated accessible and unaccessible cloudflare domains
+
+Script will always look for a file `cloudflare_domain_list.txt` and loads that to check instead of the top10milliondomains list
