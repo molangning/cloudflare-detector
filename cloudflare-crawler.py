@@ -177,13 +177,19 @@ accessible_cloudflare_protected_domains=queue.Queue()
 unaccessible_cloudflare_protected_domains=queue.Queue()
 
 def status_check():
+
+    last_leftover_domains=domain_list.qsize()
+    delay=5
+
     while True:
 
         if domain_list.qsize() == 0 and processed_domains.qsize() == 0:
             return
             
-        print("[+] %s domains left to be resolved, %s domains left to check for cloudflare"%(domain_list.qsize(), processed_domains.qsize()))
-        time.sleep(5)
+        print("[+] %s domains left to be resolved, %s domains left to check for cloudflare, resolved %i domains in the last %i seconds"%(domain_list.qsize(), processed_domains.qsize(), last_leftover_domains - domain_list.qsize(), delay))
+        last_leftover_domains=domain_list.qsize()
+
+        time.sleep(delay)
 
 def check_domain():
 
@@ -244,7 +250,7 @@ def lookup_domain(domain):
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
 
-    time.sleep(0.05)
+    time.sleep(0.1)
 
 def test_domains():
 
@@ -265,43 +271,46 @@ def test_domains():
 
 def tcping_domains(domain):
 
-    try:
-        res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
+    for i in range(1,4):
 
-    except requests.exceptions.Timeout:
-        print("[!] Connection to %s timed out!"%(domain))
+        try:
+            res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
 
-        unaccessible_cloudflare_protected_domains.put(domain)
-        return
+            if "Server" not in res_headers.keys():
+                print("[+] Response from %s is missing the Server header!"%(domain))
+                return
 
-    except requests.exceptions.SSLError:
+            elif "CF-RAY" not in res_headers.keys():
+                print("[+] Response from %s is missing the CF-RAY header!"%(domain))
+                return
 
-        print("[!] SSL error while trying to connect to %s!"%(domain))
+            elif res_headers["Server"]!="cloudflare":
+                print("[+] Response from %s is not cloudflare!"%(domain))
+                return
 
-        unaccessible_cloudflare_protected_domains.put(domain)
-        return
+            # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
+            accessible_cloudflare_protected_domains.put(domain)
+            time.sleep(0.1)
+            return
 
-    except Exception as e:
+        except requests.exceptions.Timeout:
+            print("[!] Connection to %s timed out! (%i/3)"%(domain, i))
+            time.sleep(i ** 1.5)
 
-        print("[!] Unhandled error: %s"%(e))
-        return
+        except requests.exceptions.SSLError:
+            print("[!] SSL error while trying to connect to %s!"%(domain))
+            break
 
-    if "Server" not in res_headers.keys():
-        print("[+] Response from %s is missing the Server header!"%(domain))
-        return
+        except requests.exceptions.ConnectionError:
+            print("[!] Error with connection while trying to connect to %s! (%i/3)"%(domain, i))
+            time.sleep(i ** 2)
 
-    elif "CF-RAY" not in res_headers.keys():
-        print("[+] Response from %s is missing the CF-RAY header!"%(domain))
-        return
+        except Exception as e:
+            print("[!] Unhandled error: %s"%(e))
+            return
 
-    elif res_headers["Server"]!="cloudflare":
-        print("[+] Response from %s is not cloudflare!"%(domain))
-        return
-
-    # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
-    accessible_cloudflare_protected_domains.put(domain)
-
-    time.sleep(0.1)
+    unaccessible_cloudflare_protected_domains.put(domain)
+    return
 
 print("[+] Starting dns lookup process")
 
@@ -312,7 +321,7 @@ reachability_check_pool=[]
 for i in range(64):
     dns_check_pool.append(threading.Thread(target=check_domain))
 
-for i in range(16):
+for i in range(32):
     reachability_check_pool.append(threading.Thread(target=test_domains))
 
 for thread in dns_check_pool:
