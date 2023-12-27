@@ -118,16 +118,33 @@ def load_top10million():
         zipped_file=zipfile.ZipFile('top10milliondomains.csv.zip', 'r')
         zipped_file.extract('top10milliondomains.csv', '.')
 
-    top10milliondomains_raw=pd.read_csv("top10milliondomains.csv").values.tolist()
+    top10milliondomains_raw=pd.read_csv("top10milliondomains.csv").iloc[:,1].values.tolist()
+    top10milliondomains_mutated=[]
 
-    return top10milliondomains_raw
+    for domain in top10milliondomains_raw:
+
+        if domain.count(".")==1:
+            top10milliondomains_mutated.append("www."+domain)
+
+        top10milliondomains_mutated.append(domain)
+
+
+    return top10milliondomains_mutated
 
 def load_domains():
     
     if os.path.isfile("cloudflare_domain_list.txt"):
 
         print("[+] Found a local list of cloudflare domains, using that instead.")
-        domains=open("cloudflare_domain_list.txt","r").read().split("\n")
+        domains_raw=open("cloudflare_domain_list.txt","r").read()
+        domains=[]
+
+        for i in domains_raw.split("\n"):
+
+            if not i:
+                continue
+
+            domains.append(i)
 
         return domains
         
@@ -143,15 +160,7 @@ domain_list_raw=load_domains()
 
 print("[+] Loaded a list of %i domains from the domain list"%(len(domain_list_raw)))
 
-for i in domain_list_raw:
-
-    if not i:
-        continue
-
-    domain=i[1]
-
-    if domain.count(".")==1:
-        domain_list.put("www."+domain)
+for domain in domain_list_raw:
 
     domain_list.put(domain)
 
@@ -167,23 +176,31 @@ unaccessible_cloudflare_domains=queue.Queue()
 def status_check():
     while True:
 
-        if domain_list.empty() and processed_domains.empty():
+        if domain_list.qsize() == 0 and processed_domains.qsize() == 0:
             return
             
-        print("[+] %s domains left to be checked for cloudflare protection."%(domain_list.qsize()))
+        print("[+] %s domains left to be resolved, %s domains left to check for cloudflare"%(domain_list.qsize(), processed_domains.qsize()))
         time.sleep(5)
 
 def check_domain():
+
     while True:
-        lookup_domain()
 
-def lookup_domain():
+        if domain_list.empty():
+            return
+
+        # Queue may not be empty when we check, but may be empty when we try to retrieve values
+
+        try:
+            domain=domain_list.get(block=False)
+            lookup_domain(domain)
+            domain_list.task_done()
     
-    if domain_list.empty():
-        return
+        except queue.Empty:
+            pass
 
-    domain=domain_list.get()
-
+def lookup_domain(domain):
+    
     for i in range(1,4):
         
         try:
@@ -197,9 +214,7 @@ def lookup_domain():
                     # print("[+] %s in in cloudflare range %s"%(domain,cloudflare_range))
 
                     processed_domains.put(domain)
-                    domain_list.task_done()
-
-            break
+                    return
 
         except socket.gaierror as e:
             
@@ -208,8 +223,7 @@ def lookup_domain():
 
             if e.errno == -5 or e.errno == -2:
                 print("[!] %s has no available ip addresses!"%(domain))
-                domain_list.task_done()
-                break
+                return
 
             elif e.errno == -3:
                 print("[!] Temporarily failed to resolve %s (%i/3)"%(domain,i))
@@ -219,15 +233,14 @@ def lookup_domain():
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
-                domain_list.task_done()
-                break
+                return
 
         except Exception as e:
 
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
 
-    time.sleep(0.1)
+    time.sleep(0.05)
 
 def test_domains():
 
@@ -236,52 +249,56 @@ def test_domains():
         if domain_list.empty() and processed_domains.empty():
             return
 
-        domain=processed_domains.get()
+        # Queue may not be empty when we check, but may be empty when we try to retrieve values
 
         try:
-            res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
-
-        except requests.exceptions.Timeout:
-            print("[!] Connection to %s timed out!"%(domain))
-
-            unaccessible_cloudflare_domains.put(domain)
+            domain=processed_domains.get(block=False)
+            tcping_domains(domain)
             processed_domains.task_done()
-            continue
+    
+        except queue.Empty:
+            pass
 
-        except requests.exceptions.SSLError:
+def tcping_domains(domain):
 
-            print("[!] SSL error while trying to connect to %s!"%(domain))
+    try:
+        res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
 
-            unaccessible_cloudflare_domains.put(domain)
-            processed_domains.task_done()
-            continue
+    except requests.exceptions.Timeout:
+        print("[!] Connection to %s timed out!"%(domain))
 
-        if "Server" not in res_headers.keys():
-            # print("[+] Response is missing the Server header!")
+        unaccessible_cloudflare_domains.put(domain)
+        return
 
-            unaccessible_cloudflare_domains.put(domain)
-            processed_domains.task_done()
-            continue
+    except requests.exceptions.SSLError:
 
-        if "CF-RAY" not in res_headers.keys():
-            # print("[+] Response is missing the CF-RAY header!")
+        print("[!] SSL error while trying to connect to %s!"%(domain))
 
-            unaccessible_cloudflare_domains.put(domain)
-            processed_domains.task_done()
-            continue
+        unaccessible_cloudflare_domains.put(domain)
+        return
 
-        if res_headers["Server"]!="cloudflare":
-            # print("[+] Response is not cloudflare!")
+    if "Server" not in res_headers.keys():
+        # print("[+] Response is missing the Server header!")
 
-            unaccessible_cloudflare_domains.put(domain)
-            processed_domains.task_done()
-            continue
+        unaccessible_cloudflare_domains.put(domain)
+        return
 
-        print("[+] %s is protected by cloudflare and reachable by us."%(domain))
-        accessible_cloudflare_domains.put(domain)
-        processed_domains.task_done()
+    if "CF-RAY" not in res_headers.keys():
+        # print("[+] Response is missing the CF-RAY header!")
 
-        time.sleep(0.2)
+        unaccessible_cloudflare_domains.put(domain)
+        return
+
+    if res_headers["Server"]!="cloudflare":
+        # print("[+] Response is not cloudflare!")
+
+        unaccessible_cloudflare_domains.put(domain)
+        return
+
+    print("[+] %s is protected by cloudflare and reachable by us."%(domain))
+    accessible_cloudflare_domains.put(domain)
+
+    time.sleep(0.05)
 
 print("[+] Starting dns lookup process")
 
@@ -289,10 +306,10 @@ threading.Thread(target=status_check).start()
 dns_check_pool=[]
 reachability_check_pool=[]
 
-for i in range(16):
+for i in range(32):
     dns_check_pool.append(threading.Thread(target=check_domain))
 
-for i in range(8):
+for i in range(16):
     reachability_check_pool.append(threading.Thread(target=test_domains))
 
 for thread in dns_check_pool:
@@ -318,6 +335,13 @@ def dump_domains(target_queue, file_name):
 
             time.sleep(0.1)
 
-
 threading.Thread(target=dump_domains, args=[accessible_cloudflare_domains, "accessible_cloudflare_domains.txt"]).start()
 threading.Thread(target=dump_domains, args=[unaccessible_cloudflare_domains, "unaccessible_cloudflare_domains.txt"]).start()
+
+for thread in dns_check_pool:
+    thread.join()
+
+for thread in reachability_check_pool:
+    thread.join()
+
+print("[+] Finished checks")
