@@ -201,7 +201,7 @@ def check_domain():
 
 def lookup_domain(domain):
     
-    for i in range(1,4):
+    for i in range(1,6):
         
         try:
             domain_ip_address=socket.gethostbyname(domain)
@@ -226,7 +226,7 @@ def lookup_domain(domain):
                 return
 
             elif e.errno == -3:
-                print("[!] Temporarily failed to resolve %s (%i/3)"%(domain,i))
+                print("[!] Temporarily failed to resolve %s (%i/5)"%(domain,i))
 
                 # Exponential back off
                 time.sleep(i ** 2)
@@ -277,6 +277,10 @@ def tcping_domains(domain):
         unaccessible_cloudflare_domains.put(domain)
         return
 
+    except Exception as e:
+
+        print("[!] Unhandled error: %s"%(e))
+
     if "Server" not in res_headers.keys():
         # print("[+] Response is missing the Server header!")
 
@@ -306,7 +310,7 @@ threading.Thread(target=status_check).start()
 dns_check_pool=[]
 reachability_check_pool=[]
 
-for i in range(32):
+for i in range(64):
     dns_check_pool.append(threading.Thread(target=check_domain))
 
 for i in range(16):
