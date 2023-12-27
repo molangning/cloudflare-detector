@@ -12,7 +12,6 @@ import pandas as pd
 import ipaddress
 import threading
 import queue
-import concurrent.futures
 
 ## Create file .always-fresh-cloudflare-lists for the program to regenerate the domain lists
 
