@@ -12,6 +12,7 @@ import pandas as pd
 import ipaddress
 import threading
 import queue
+import random
 
 ## Create file .always-fresh-cloudflare-lists for the program to regenerate the domain lists
 
@@ -183,7 +184,8 @@ def status_check():
 
     while True:
 
-        if domain_list.qsize() == 0 and processed_domains.qsize() == 0:
+        if domain_list.empty() and processed_domains.empty():
+            print("[+] Domain list and cloudflare protected list have been exhausted")
             return
             
         print("[+] %s domains left to be resolved, %s domains left to check for cloudflare, resolved %i domains in the last %i seconds"%(domain_list.qsize(), processed_domains.qsize(), last_leftover_domains - domain_list.qsize(), delay))
@@ -224,6 +226,9 @@ def lookup_domain(domain):
 
                     cloudflare_protected_domains.put(domain)
                     processed_domains.put(domain)
+
+                    time.sleep(random.uniform(0.1, 0.2))
+
                     return
 
         except socket.gaierror as e:
@@ -239,7 +244,7 @@ def lookup_domain(domain):
                 print("[!] Temporarily failed to resolve %s (%i/7)"%(domain,i))
 
                 # Exponential back off
-                time.sleep(i ** 1.5)
+                time.sleep((i ** 1.5) + random.uniform(1,5))
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
@@ -249,8 +254,6 @@ def lookup_domain(domain):
 
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
-
-    time.sleep(0.1)
 
 def test_domains():
 
@@ -271,7 +274,7 @@ def test_domains():
 
 def tcping_domains(domain):
 
-    for i in range(1,4):
+    for i in range(1,8):
 
         try:
             res_headers=requests.head("https://%s:443/"%(domain),timeout=60).headers
@@ -290,11 +293,11 @@ def tcping_domains(domain):
 
             # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
             accessible_cloudflare_protected_domains.put(domain)
-            time.sleep(0.1)
+            time.sleep(random.uniform(0.1, 0.2))
             return
 
         except requests.exceptions.Timeout:
-            print("[!] Connection to %s timed out! (%i/3)"%(domain, i))
+            print("[!] Connection to %s timed out! (%i/7)"%(domain, i))
             time.sleep(i ** 1.5)
 
         except requests.exceptions.SSLError:
@@ -302,8 +305,8 @@ def tcping_domains(domain):
             break
 
         except requests.exceptions.ConnectionError:
-            print("[!] Error with connection while trying to connect to %s! (%i/3)"%(domain, i))
-            time.sleep(i ** 2)
+            print("[!] Error with connection while trying to connect to %s! (%i/7)"%(domain, i))
+            time.sleep((i ** 1.5) + random.uniform(1,5))
 
         except Exception as e:
             print("[!] Unhandled error: %s"%(e))
