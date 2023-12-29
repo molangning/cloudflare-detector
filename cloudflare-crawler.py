@@ -8,11 +8,11 @@ import time
 from datetime import datetime
 import os
 import zipfile
-import pandas as pd
 import ipaddress
 import threading
 import queue
 import random
+import csv
 
 ## Create file .always-fresh-cloudflare-lists for the program to regenerate the domain lists
 
@@ -85,6 +85,21 @@ cloudflare_ipv4=temp
 
 print("[+] Got a list of %i IPv4 ranges"%(len(cloudflare_ipv4)))
 
+def parse_csv(file):
+
+    contents=csv.DictReader(open(file))
+    csv_data={}
+
+    for i in contents.fieldnames:
+        csv_data[i]=[]
+
+    for row in contents:
+        for key, value in row.items():
+
+            csv_data[key].append(value)
+
+    return csv_data
+
 def load_top10million():
 
     print("[+] Checking for local copy of Top 10 million domains")
@@ -119,7 +134,7 @@ def load_top10million():
         zipped_file=zipfile.ZipFile('top10milliondomains.csv.zip', 'r')
         zipped_file.extract('top10milliondomains.csv', '.')
 
-    top10milliondomains_raw=pd.read_csv("top10milliondomains.csv").iloc[:,1].values.tolist()
+    top10milliondomains_raw=parse_csv("top10milliondomains.csv")["Domain"]
     top10milliondomains_mutated=[]
 
     for domain in top10milliondomains_raw:
