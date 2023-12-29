@@ -4,7 +4,6 @@ import json
 import time
 import socket
 import requests
-import time
 from datetime import datetime
 import os
 import zipfile
@@ -25,6 +24,7 @@ def silent_remove(path):
 
     except Exception as e:
         print("[!] Unknown exception when trying to remove %s"%(path))
+        print("[!] Error: %s"%(e))
 
 if os.path.isfile(".always-fresh-cloudflare-lists"):
 
@@ -148,35 +148,35 @@ def load_top10million():
 
     return top10milliondomains_mutated
 
-def load_domains():
+
+is_using_cloudflare_list=False
+domain_list_raw=[]
     
-    if os.path.isfile("cloudflare_domain_list.txt"):
+if os.path.isfile("cloudflare_domain_list.txt"):
 
-        print("[+] Found a local list of cloudflare domains, using that instead.")
-        domains_raw=open("cloudflare_domain_list.txt","r").read()
-        domains=[]
+    is_using_cloudflare_list=True
 
-        for i in domains_raw.split("\n"):
+    print("[+] Found a local list of cloudflare domains, using that instead.")
+    domains_raw=open("cloudflare_domain_list.txt","r").read()
+    
+    for i in domains_raw.split("\n"):
 
-            if not i:
-                continue
+        if not i:
+            continue
 
-            domains.append(i)
+        domain_list_raw.append(i)
 
-        return domains
+    print("[+] Got a list of %i domains from the domain list"%(len(domain_list_raw)))
+    
+else:
 
-        print("[+] Got a list of %i domains from the domain list"%(len(domains)))
-        
-    else:
+    print("[+] Using top10million list as cloudflare_domain_list.txt is not found")
 
-        print("[+] Using top10million list as cloudflare_domain_list.txt is not found")
-
-        return load_top10million()
+    domain_list_raw=load_top10million()
 
 print("[+] Parsing domain list")
 
 domain_list=queue.Queue()
-domain_list_raw=load_domains()
 
 for domain in domain_list_raw:
 
@@ -225,6 +225,10 @@ def check_domain():
         except queue.Empty:
             pass
 
+def optional_log_all_error(domain):
+    if is_using_cloudflare_list:
+        unaccessible_cloudflare_protected_domains.put(domain)
+
 def lookup_domain(domain):
     
     for i in range(1,8):
@@ -243,8 +247,9 @@ def lookup_domain(domain):
                     processed_domains.put(domain)
 
                     time.sleep(random.uniform(0.1, 0.2))
+                    break
 
-                    return
+            return
 
         except socket.gaierror as e:
             
@@ -253,6 +258,7 @@ def lookup_domain(domain):
 
             if e.errno == -5 or e.errno == -2:
                 print("[!] %s has no available ip addresses!"%(domain))
+                optional_log_all_error(domain)
                 return
 
             elif e.errno == -3:
@@ -263,12 +269,16 @@ def lookup_domain(domain):
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
+                optional_log_all_error(domain)
                 return
 
         except Exception as e:
-
+            optional_log_all_error(domain)
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
+            return
+
+        optional_log_all_error(domain)
 
 def test_domains():
 
@@ -296,14 +306,17 @@ def tcping_domains(domain):
 
             if "Server" not in res_headers.keys():
                 print("[+] Response from %s is missing the Server header!"%(domain))
+                optional_log_all_error(domain)
                 return
 
             elif "CF-RAY" not in res_headers.keys():
                 print("[+] Response from %s is missing the CF-RAY header!"%(domain))
+                optional_log_all_error(domain)
                 return
 
             elif res_headers["Server"]!="cloudflare":
                 print("[+] Response from %s is not cloudflare!"%(domain))
+                optional_log_all_error(domain)
                 return
 
             # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
@@ -317,6 +330,7 @@ def tcping_domains(domain):
 
         except requests.exceptions.SSLError:
             print("[!] SSL error while trying to connect to %s!"%(domain))
+            optional_log_all_error(domain)
             break
 
         except requests.exceptions.ConnectionError:
@@ -325,6 +339,7 @@ def tcping_domains(domain):
 
         except Exception as e:
             print("[!] Unhandled error: %s"%(e))
+            optional_log_all_error(domain)
             return
 
     unaccessible_cloudflare_protected_domains.put(domain)
