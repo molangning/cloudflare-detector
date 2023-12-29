@@ -28,6 +28,7 @@ def silent_remove(path):
 
 if os.path.isfile(".always-fresh-cloudflare-lists"):
 
+    silent_remove("unaccessible_domains.txt")
     silent_remove("cloudflare_protected_domains.txt")
     silent_remove("accessible_cloudflare_protected_domains.txt")
     silent_remove("unaccessible_cloudflare_protected_domains.txt")
@@ -189,6 +190,7 @@ print("[+] Queued %i domains from the domain list"%(domain_list.qsize()))
 
 processed_domains=queue.Queue()
 cloudflare_protected_domains=queue.Queue()
+unaccessible_domains=queue.Queue()
 accessible_cloudflare_protected_domains=queue.Queue()
 unaccessible_cloudflare_protected_domains=queue.Queue()
 
@@ -227,7 +229,7 @@ def check_domain():
 
 def optional_log_all_error(domain):
     if is_using_cloudflare_list:
-        unaccessible_cloudflare_protected_domains.put(domain)
+        unaccessible_domains.put(domain)
 
 def lookup_domain(domain):
     
@@ -379,6 +381,7 @@ def dump_domains(target_queue, file_name):
             time.sleep(0.1)
 
 threading.Thread(target=dump_domains, args=[cloudflare_protected_domains, "cloudflare_protected_domains.txt"]).start()
+threading.Thread(target=dump_domains, args=[unaccessible_domains, "unaccessible_domains.txt"]).start()
 threading.Thread(target=dump_domains, args=[accessible_cloudflare_protected_domains, "accessible_cloudflare_protected_domains.txt"]).start()
 threading.Thread(target=dump_domains, args=[unaccessible_cloudflare_protected_domains, "unaccessible_cloudflare_protected_domains.txt"]).start()
 
