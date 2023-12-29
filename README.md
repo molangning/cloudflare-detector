@@ -8,6 +8,10 @@ If the server replies with headers found in cloudflare protected sites, the doma
 
 If the domain resolves to a ip address on cloudflare's network but the connection fails for some reason, the domain will be written to `unaccessible_cloudflare_protected_domains.txt`
 
+## Why this project?
+
+Cloudflare is a useful service to hide behind as ip blocks generally don't apply to Cloudflare. To bypass firewall solutions (like the GFW) you will need to know which domains are blocked and which aren't.
+
 ## Special files
 
 Create a file named `.always-fresh-cloudflare-lists` for the script to automatically delete generated accessible and unaccessible cloudflare domains
