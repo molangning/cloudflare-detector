@@ -10,6 +10,6 @@ If the domain resolves to a ip address on cloudflare's network but the connectio
 
 ## Special files
 
-Create a file named `/.always-fresh-cloudflare-lists` for the script to automatically delete generated accessible and unaccessible cloudflare domains
+Create a file named `.always-fresh-cloudflare-lists` for the script to automatically delete generated accessible and unaccessible cloudflare domains
 
 Script will always look for a file `cloudflare_domain_list.txt` and loads that to check instead of the top10milliondomains list
