@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import json
+import shutil
 import time
 import socket
 import requests
@@ -15,23 +15,13 @@ import csv
 
 ## Create file .always-fresh-cloudflare-lists for the program to regenerate the domain lists
 
-def silent_remove(path):
-    try:
-        os.remove(path)
-
-    except FileNotFoundError:
-        pass
-
-    except Exception as e:
-        print("[!] Unknown exception when trying to remove %s"%(path))
-        print("[!] Error: %s"%(e))
-
 if os.path.isfile(".always-fresh-cloudflare-lists"):
 
-    silent_remove("unaccessible_domains.txt")
-    silent_remove("cloudflare_protected_domains.txt")
-    silent_remove("accessible_cloudflare_protected_domains.txt")
-    silent_remove("unaccessible_cloudflare_protected_domains.txt")
+    shutil.rmtree("lists/",ignore_errors=True)
+
+if not os.path.isdir("lists/"): 
+
+    os.mkdir("lists/") 
 
 print("[+] Cloudflare crawler")
 
@@ -189,6 +179,11 @@ print("[+] Queued %i domains from the domain list"%(domain_list.qsize()))
 # and threads are easier to implement. If you want, you can open a pull request to change that.
 
 processed_domains=queue.Queue()
+resolved_failed_domains=queue.Queue()
+not_cloudflare_protected_domains=queue.Queue()
+ssl_failed_domains=queue.Queue()
+connection_failed_domains=queue.Queue()
+unknown_fail_check_domains=queue.Queue()
 cloudflare_protected_domains=queue.Queue()
 unaccessible_domains=queue.Queue()
 accessible_cloudflare_protected_domains=queue.Queue()
@@ -227,9 +222,9 @@ def check_domain():
         except queue.Empty:
             pass
 
-def optional_log_all_error(domain):
+def optional_log_all_error(target_queue, domain):
     if is_using_cloudflare_list:
-        unaccessible_domains.put(domain)
+        target_queue.put(domain)
 
 def lookup_domain(domain):
     
@@ -249,8 +244,9 @@ def lookup_domain(domain):
                     processed_domains.put(domain)
 
                     time.sleep(random.uniform(0.1, 0.2))
-                    break
+                    return
 
+            optional_log_all_error(not_cloudflare_protected_domains,domain)
             return
 
         except socket.gaierror as e:
@@ -260,8 +256,7 @@ def lookup_domain(domain):
 
             if e.errno == -5 or e.errno == -2:
                 print("[!] %s has no available ip addresses!"%(domain))
-                optional_log_all_error(domain)
-                return
+                break
 
             elif e.errno == -3:
                 print("[!] Temporarily failed to resolve %s (%i/7)"%(domain,i))
@@ -271,29 +266,23 @@ def lookup_domain(domain):
 
             else:
                 print("[!] Unhandled error while trying to resolve %s: %s"%(domain,e))
-                optional_log_all_error(domain)
-                return
+                break
 
         except Exception as e:
-            optional_log_all_error(domain)
             print("[!] Unknown error occurred while trying to resolve %s"%(domain))
             print("[!] Error: %s"%(e))
-            return
+            break
 
-        optional_log_all_error(domain)
+    optional_log_all_error(resolved_failed_domains, domain)
 
 def test_domains():
 
     while True:
 
-        if domain_list.empty() and processed_domains.empty():
-            return
-
-        # Queue may not be empty when we check, but may be empty when we try to retrieve values
-
         try:
             domain=processed_domains.get(block=False)
             tcping_domains(domain)
+            print(domain)
             processed_domains.task_done()
     
         except queue.Empty:
@@ -308,17 +297,17 @@ def tcping_domains(domain):
 
             if "Server" not in res_headers.keys():
                 print("[+] Response from %s is missing the Server header!"%(domain))
-                optional_log_all_error(domain)
+                optional_log_all_error(not_cloudflare_protected_domains,domain)
                 return
 
             elif "CF-RAY" not in res_headers.keys():
                 print("[+] Response from %s is missing the CF-RAY header!"%(domain))
-                optional_log_all_error(domain)
+                optional_log_all_error(not_cloudflare_protected_domains,domain)
                 return
 
             elif res_headers["Server"]!="cloudflare":
                 print("[+] Response from %s is not cloudflare!"%(domain))
-                optional_log_all_error(domain)
+                optional_log_all_error(not_cloudflare_protected_domains,domain)
                 return
 
             # print("[+] %s is protected by cloudflare and reachable by us."%(domain))
@@ -332,7 +321,7 @@ def tcping_domains(domain):
 
         except requests.exceptions.SSLError:
             print("[!] SSL error while trying to connect to %s!"%(domain))
-            optional_log_all_error(domain)
+            optional_log_all_error(ssl_failed_domains,domain)
             break
 
         except requests.exceptions.ConnectionError:
@@ -341,10 +330,10 @@ def tcping_domains(domain):
 
         except Exception as e:
             print("[!] Unhandled error: %s"%(e))
-            optional_log_all_error(domain)
+            optional_log_all_error(unknown_fail_check_domains, domain)
             return
 
-    unaccessible_cloudflare_protected_domains.put(domain)
+    unaccessible_cloudflare_protected_domains.put(connection_failed_domains,domain)
     return
 
 print("[+] Starting dns lookup process")
@@ -357,7 +346,7 @@ for i in range(64):
     dns_check_pool.append(threading.Thread(target=check_domain))
 
 for i in range(32):
-    reachability_check_pool.append(threading.Thread(target=test_domains))
+    reachability_check_pool.append(threading.Thread(target=test_domains, daemon=True))
 
 for thread in dns_check_pool:
     thread.start()
@@ -368,9 +357,6 @@ for thread in reachability_check_pool:
 def dump_domains(target_queue, file_name):
 
     while True:
-
-        if domain_list.empty() and processed_domains.empty() and target_queue.empty():
-            break
     
         try:
             domain=target_queue.get(block=False)
@@ -380,15 +366,44 @@ def dump_domains(target_queue, file_name):
         except queue.Empty:
             time.sleep(0.1)
 
-threading.Thread(target=dump_domains, args=[cloudflare_protected_domains, "cloudflare_protected_domains.txt"]).start()
-threading.Thread(target=dump_domains, args=[unaccessible_domains, "unaccessible_domains.txt"]).start()
-threading.Thread(target=dump_domains, args=[accessible_cloudflare_protected_domains, "accessible_cloudflare_protected_domains.txt"]).start()
-threading.Thread(target=dump_domains, args=[unaccessible_cloudflare_protected_domains, "unaccessible_cloudflare_protected_domains.txt"]).start()
+dump_domains_pool=[]
+
+resolved_failed_domains=queue.Queue()
+not_cloudflare_protected_domains=queue.Queue()
+ssl_failed_domains=queue.Queue()
+connection_failed_domains=queue.Queue()
+unknown_fail_check_domains=queue.Queue()
+
+target_dump=[
+    [cloudflare_protected_domains, "lists/cloudflare_protected_domains.txt"],
+    [unaccessible_domains, "lists/unaccessible_domains.txt"],
+    [accessible_cloudflare_protected_domains, "lists/accessible_cloudflare_protected_domains.txt"],
+    [unaccessible_cloudflare_protected_domains, "lists/unaccessible_cloudflare_protected_domains.txt"],
+    [unknown_fail_check_domains, "lists/unknown_failures_while_checking_domains.txt"],
+    [connection_failed_domains,"lists/connection_failed_domains.txt"],
+    [ssl_failed_domains,"lists/ssl_failed_while_connecting_domains.txt"],
+    [not_cloudflare_protected_domains,"lists/not_cloudflare_protected_domains.txt"],
+    [resolved_failed_domains,"lists/resolving_failed_domains.txt"]
+]
+
+for i in target_dump:
+    dump_domains_pool.append(threading.Thread(target=dump_domains, args=i, daemon=True))
+
+for thread in dump_domains_pool:
+    thread.start()
 
 for thread in dns_check_pool:
     thread.join()
 
-for thread in reachability_check_pool:
-    thread.join()
+domain_list.join()
+
+print("[+] Domain list queue drained")
+
+processed_domains.join()
+
+print("[+] Processed domains queue drained")
+
+for target_queue in target_dump:
+    target_queue[0].join()
 
 print("[+] Finished checks")
