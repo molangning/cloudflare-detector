@@ -6,3 +6,6 @@ cloudflare_domain_list.txt
 
 # Ignore flags
 .always-fresh-cloudflare-lists
+
+# Ignore logs
+*.log
