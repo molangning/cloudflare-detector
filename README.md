@@ -17,3 +17,7 @@ Cloudflare is a useful service to hide behind as ip blocks generally don't apply
 Create a file named `.always-fresh-cloudflare-lists` for the script to automatically delete generated accessible and unaccessible cloudflare domains
 
 Script will always look for a file `cloudflare_domain_list.txt` and loads that to check instead of the top10milliondomains list
+
+## Lists
+
+`unaccessible_cloudflare_domains_cn.txt` and `accessible_cloudflare_domains_cn.txt` are lists of domains collected behind the GFW. Unaccessible domains are domains that can't be reached behind the GFW while reachable from a uncensored network. Accessible domains are domains that can be reached from behind the GFW.
